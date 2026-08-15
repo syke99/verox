@@ -41,7 +41,7 @@ func Example() {
 	getName := func(id string) (string, error) {
 		return verox.Try(fetchUser(id)).
 			Wrap(ErrUserLookupFailed).
-			TryMap(validateUser).
+			Try(validateUser).
 			Wrap(ErrUserInvalid).
 			Map(func(u User) string { return u.Name }).
 			Unwrap()
@@ -81,9 +81,9 @@ func ExampleRes_Map() {
 	// Ada Lovelace
 }
 
-func ExampleRes_TryMap() {
+func ExampleRes_Try() {
 	res := verox.Try(fetchUser("42")).
-		TryMap(validateUser)
+		Try(validateUser)
 
 	val, err := res.Unwrap()
 	fmt.Println(val.Email, err)
@@ -139,7 +139,7 @@ func ExampleRes_As() {
 
 func ExampleRes_Unwrap() {
 	val, err := verox.Try(fetchUser("42")).
-		TryMap(validateUser).
+		Try(validateUser).
 		Map(func(u User) string { return u.Name }).
 		Unwrap()
 	fmt.Println(val, err)

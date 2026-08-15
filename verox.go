@@ -28,7 +28,7 @@ func Try[T any](val T, err error) Res[T] {
 // Wrap attaches sentinel to the held error via %w, so errors.Is and
 // errors.As still see both sentinel and the original error. It is a no-op
 // on success, and a no-op if the error has already been wrapped by an
-// earlier stage in the chain (see TryMap/FlatMap/Map).
+// earlier stage in the chain (see Try/FlatMap/Map).
 func (r Res[T]) Wrap(sentinel error) Res[T] {
 	if r.err != nil && !r.wrapped {
 		r.err = fmt.Errorf("%w: %w", sentinel, r.err)
@@ -45,10 +45,14 @@ func (r Res[T]) Map[U any](f func(T) U) Res[U] {
 	return Res[U]{val: f(r.val)}
 }
 
-// TryMap applies a fallible step using the held value. If r already holds
-// an error, f is never called and the error propagates unchanged; this is
+// Try applies a fallible step using the held value. If r already holds an
+// error, f is never called and the error propagates unchanged; this is
 // what lets a chain stop running further steps as soon as one fails.
-func (r Res[T]) TryMap[U any](f func(val T) (U, error)) Res[U] {
+//
+// Try shares its name with the package-level Try function; they don't
+// collide since one is reached through a receiver (r.Try(...)) and the
+// other through the package (verox.Try(...)).
+func (r Res[T]) Try[U any](f func(val T) (U, error)) Res[U] {
 	if r.err != nil {
 		return Res[U]{err: r.err, wrapped: true}
 	}

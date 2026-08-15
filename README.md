@@ -8,11 +8,11 @@ Verox, the chainable Result type for Go that keeps sentinel-wrapped errors corre
 
 What problem does Verox solve?
 =====
-Go's `(value, error)` return convention is good, but chaining several fallible steps together and wrapping each one's error with a sentinel for clean handling further up the call stack usually means either a lot of repeated `if err != nil` boilerplate, or bugs that are easy to miss: a later step's sentinel getting stamped onto an earlier step's error that a short-circuited chain never even reached, or a later step's side effects (a DB write, an API call) firing anyway because the short-circuit only happened after the call was already made. Verox's `Res[T]` handles both of these for you: `TryMap`, `Map`, and `FlatMap` never invoke a later step once an earlier one has failed, and `Wrap` won't attribute a sentinel to an error that isn't actually the current stage's own.
+Go's `(value, error)` return convention is good, but chaining several fallible steps together and wrapping each one's error with a sentinel for clean handling further up the call stack usually means either a lot of repeated `if err != nil` boilerplate, or bugs that are easy to miss: a later step's sentinel getting stamped onto an earlier step's error that a short-circuited chain never even reached, or a later step's side effects (a DB write, an API call) firing anyway because the short-circuit only happened after the call was already made. Verox's `Res[T]` handles both of these for you: `Try`, `Map`, and `FlatMap` never invoke a later step once an earlier one has failed, and `Wrap` won't attribute a sentinel to an error that isn't actually the current stage's own.
 
 </br>
 
-Verox is built on Go 1.27's generic methods, so combinators like `Map`, `TryMap`, and `FlatMap` live directly on `Res[T]` instead of as free functions.
+Verox is built on Go 1.27's generic methods, so combinators like `Map`, `Try`, and `FlatMap` live directly on `Res[T]` instead of as free functions.
 
 How do I use Verox?
 ====
@@ -45,18 +45,21 @@ res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed)
 ```
 
-Chain additional fallible steps with `.TryMap()`. Its signature is
-`TryMap[U any](f func(val T) (U, error)) Res[U]` — `f` takes the value
-currently held by the chain (`T`) and returns the same `(value, error)`
-shape any ordinary Go function already returns, just with a possibly
-different result type (`U`):
+Chain additional fallible steps with `.Try()`. Yes, the same name as the
+package-level `Try` used to start the chain above — Go keeps these apart
+without any ambiguity, since one is reached through the package
+(`verox.Try(...)`) and the other through a receiver (`res.Try(...)`). Its
+signature is `Try[U any](f func(val T) (U, error)) Res[U]` — `f` takes the
+value currently held by the chain (`T`) and returns the same
+`(value, error)` shape any ordinary Go function already returns, just with
+a possibly different result type (`U`):
 
 ```go
-// validateUser matches the shape TryMap requires: func(T) (U, error).
-// Here T and U both happen to be User, but they don't have to be — TryMap
-// can change the type along with validating it, the same way fetchUser
-// could just as easily have returned a different type than what comes out
-// the other end of validateUser.
+// validateUser matches the shape Try requires: func(T) (U, error). Here T
+// and U both happen to be User, but they don't have to be — Try can change
+// the type along with validating it, the same way fetchUser could just as
+// easily have returned a different type than what comes out the other end
+// of validateUser.
 func validateUser(u User) (User, error) {
 	if u.Email == "" {
 		return User{}, errors.New("user has no email")
@@ -66,11 +69,11 @@ func validateUser(u User) (User, error) {
 
 res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed).
-	TryMap(validateUser).
+	Try(validateUser).
 	Wrap(ErrUserInvalid)
 ```
 
-If `fetchUser` already failed, `validateUser` is never called — `TryMap`
+If `fetchUser` already failed, `validateUser` is never called — `Try`
 short-circuits, so no step past a failure ever runs.
 
 `f`'s signature only ever has room for the one value the chain is
@@ -91,7 +94,7 @@ func validateUserStrict(u User, cfg Config, db *DB) (User, error) {
 
 res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed).
-	TryMap(func(u User) (User, error) {
+	Try(func(u User) (User, error) {
 		return validateUserStrict(u, cfg, db)
 	}).
 	Wrap(ErrUserInvalid)
@@ -113,7 +116,7 @@ func toProfile(u User) Profile {
 
 res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed).
-	TryMap(validateUser).
+	Try(validateUser).
 	Wrap(ErrUserInvalid).
 	Map(toProfile)
 ```
@@ -157,7 +160,7 @@ Finally, call `.Unwrap()` to exit back to a plain Go `(value, error)` return:
 func GetProfile(id string) (Profile, error) {
 	return verox.Try(fetchUser(id)).
 		Wrap(ErrUserLookupFailed).
-		TryMap(validateUser).
+		Try(validateUser).
 		Wrap(ErrUserInvalid).
 		Map(toProfile).
 		Unwrap()

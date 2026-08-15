@@ -87,9 +87,9 @@ func TestMap(t *testing.T) {
 	})
 }
 
-func TestTryMap(t *testing.T) {
+func TestRes_Try(t *testing.T) {
 	t.Run("runs f on success", func(t *testing.T) {
-		r := Try(4, error(nil)).TryMap(func(n int) (string, error) {
+		r := Try(4, error(nil)).Try(func(n int) (string, error) {
 			return fmt.Sprintf("n=%d", n), nil
 		})
 		val, err := r.Unwrap()
@@ -99,7 +99,7 @@ func TestTryMap(t *testing.T) {
 	})
 
 	t.Run("propagates an error returned by f", func(t *testing.T) {
-		r := Try(4, error(nil)).TryMap(func(n int) (string, error) {
+		r := Try(4, error(nil)).Try(func(n int) (string, error) {
 			return "", errBoom
 		})
 		_, err := r.Unwrap()
@@ -110,7 +110,7 @@ func TestTryMap(t *testing.T) {
 
 	t.Run("short-circuits without calling f", func(t *testing.T) {
 		called := false
-		r := Try(0, errBoom).TryMap(func(n int) (string, error) {
+		r := Try(0, errBoom).Try(func(n int) (string, error) {
 			called = true
 			return "unreachable", nil
 		})
@@ -315,7 +315,7 @@ func TestChainAttribution(t *testing.T) {
 
 		val, resErr := Try(stageA(aFails)()).
 			Wrap(errA).
-			TryMap(func(n int) (string, error) {
+			Try(func(n int) (string, error) {
 				bCalled = true
 				if bFails {
 					return "", errors.New("b-broke")
@@ -323,7 +323,7 @@ func TestChainAttribution(t *testing.T) {
 				return fmt.Sprintf("n=%d", n), nil
 			}).
 			Wrap(errB).
-			TryMap(func(s string) (string, error) {
+			Try(func(s string) (string, error) {
 				cCalled = true
 				return s + "!", nil
 			}).
