@@ -49,10 +49,7 @@ Chain additional fallible steps with `.TryMap()`. Its signature is
 `TryMap[U any](f func(val T) (U, error)) Res[U]` — `f` takes the value
 currently held by the chain (`T`) and returns the same `(value, error)`
 shape any ordinary Go function already returns, just with a possibly
-different result type (`U`). Because of that, `f` doesn't need to be a
-closure — any existing function whose signature matches `func(T) (U, error)`
-can be passed by name directly, the same way `fetchUser` was passed straight
-into `Try` above:
+different result type (`U`):
 
 ```go
 // validateUser matches the shape TryMap requires: func(T) (U, error).
@@ -76,9 +73,33 @@ res := verox.Try(fetchUser(id)).
 If `fetchUser` already failed, `validateUser` is never called — `TryMap`
 short-circuits, so no step past a failure ever runs.
 
+`f`'s signature only ever has room for the one value the chain is
+currently holding (`T`), so if a real step needs anything more — a config
+struct, a DB handle, a logger, whatever — reach for a closure that
+captures it. This is the same closure-over-captured-variables pattern
+Go already uses everywhere else (`sort.Slice`, `errgroup.Group.Go`, HTTP
+middleware), and it applies the same way to `Map` and `FlatMap` below:
+
+```go
+func validateUserStrict(u User, cfg Config, db *DB) (User, error) {
+	if cfg.Strict && u.Email == "" {
+		return User{}, errors.New("strict mode: user has no email")
+	}
+	// ... use db for whatever additional lookups strict validation needs
+	return u, nil
+}
+
+res := verox.Try(fetchUser(id)).
+	Wrap(ErrUserLookupFailed).
+	TryMap(func(u User) (User, error) {
+		return validateUserStrict(u, cfg, db)
+	}).
+	Wrap(ErrUserInvalid)
+```
+
 Use `.Map()` for a step that can't fail. Its signature is
 `Map[U any](f func(T) U) Res[U]` — no error in the return, just a plain
-value transform, so `f` can again be passed by name as long as it matches:
+value transform:
 
 ```go
 // toProfile matches the shape Map requires: func(T) U — a value in, a
