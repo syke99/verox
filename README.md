@@ -76,14 +76,46 @@ res := verox.Try(fetchUser(id)).
 If `fetchUser` already failed, `validateUser` is never called — `TryMap`
 short-circuits, so no step past a failure ever runs.
 
-Use `.Map()` for a step that can't fail, and `.FlatMap()` for a step that already returns its own `Res[U]`:
+Use `.Map()` for a step that can't fail. Its signature is
+`Map[U any](f func(T) U) Res[U]` — no error in the return, just a plain
+value transform, so `f` can again be passed by name as long as it matches:
 
 ```go
+// toProfile matches the shape Map requires: func(T) U — a value in, a
+// value out, nothing that can fail.
+func toProfile(u User) Profile {
+	return Profile{
+		DisplayName: u.Name,
+		Avatar:      u.AvatarURL,
+	}
+}
+
 res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed).
 	TryMap(validateUser).
 	Wrap(ErrUserInvalid).
 	Map(toProfile)
+```
+
+Use `.FlatMap()` for a step that's already built out of its own verox chain
+and so already returns a `Res[U]`, rather than a plain `(value, error)`
+pair. Its signature is `FlatMap[U any](f func(T) Res[U]) Res[U]`. Reaching
+for `.Map()` here instead would leave you with a `Res[Res[U]]` — a `Res`
+nested inside a `Res`, needing an extra `.Unwrap()` just to get back to
+the value you actually want. `.FlatMap()` flattens that away:
+
+```go
+// loadSubscription matches the shape FlatMap requires: func(T) Res[U]. It
+// already returns its own Res[Subscription], built from its own internal
+// Try/Wrap chain, instead of a plain (value, error) pair.
+func loadSubscription(u User) verox.Res[Subscription] {
+	return verox.Try(billingClient.GetSubscription(u.ID)).
+		Wrap(ErrSubscriptionLookupFailed)
+}
+
+res := verox.Try(fetchUser(id)).
+	Wrap(ErrUserLookupFailed).
+	FlatMap(loadSubscription)
 ```
 
 Tap into the chain with `.Peek()`/`.PeekErr()` for logging or metrics without disturbing it, and check for specific errors mid-chain with `.Is()`/`.As()`:
