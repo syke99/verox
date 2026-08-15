@@ -35,6 +35,18 @@ jobs:
           token: ${{ secrets.PUBLISH_TOKEN }}
           fetch-depth: 0
 
+      - name: Remove pre-release note from README
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        run: |
+          git config user.name "verox-publish-bot"
+          git config user.email "actions@users.noreply.github.com"
+          sed -i '/<!-- PRERELEASE-NOTE:START -->/,/<!-- PRERELEASE-NOTE:END -->/d' README.md
+          if ! git diff --quiet README.md; then
+            git add README.md
+            git commit -m "Remove pre-release Go 1.27 rc note (stable release published)"
+            git push origin main
+          fi
+
       - name: Flip repository to public
         if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
         env:

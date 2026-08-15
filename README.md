@@ -143,11 +143,13 @@ func GetProfile(id string) (Profile, error) {
 }
 ```
 
+<!-- PRERELEASE-NOTE:START -->
 **!!NOTE!!**
 
 Verox requires Go 1.27+ for generic methods. At the time of writing, 1.27 is
 still at release candidate (`go1.27rc1`+); until it's stable, building
 against this module means pointing `GOTOOLCHAIN` at a matching rc build.
+<!-- PRERELEASE-NOTE:END -->
 
 Who?
 ====
