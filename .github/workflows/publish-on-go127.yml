@@ -1,0 +1,57 @@
+name: Publish on Go 1.27 stable
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check current visibility
+        id: visibility
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          is_private=$(gh api "repos/${{ github.repository }}" --jq .private)
+          echo "already_public=$([ "$is_private" = "false" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Check for a stable Go 1.27 release
+        if: steps.visibility.outputs.already_public == 'false'
+        id: gocheck
+        run: |
+          found=$(curl -s 'https://go.dev/dl/?mode=json&include=all' \
+            | jq -r '[.[] | select(.version | test("^go1\\.27\\.[0-9]+$")) | select(.stable == true)] | length > 0')
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PUBLISH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Flip repository to public
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: gh api -X PATCH "repos/${{ github.repository }}" -f private=false
+
+      - name: Tag v0.1.0
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        run: |
+          git config user.name "verox-publish-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git tag -a v0.1.0 -m "v0.1.0: initial release"
+          git push origin v0.1.0
+
+      - name: Trigger pkg.go.dev indexing
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        run: |
+          curl -s "https://proxy.golang.org/github.com/syke99/verox/@v/v0.1.0.info"
+          curl -s "https://sum.golang.org/lookup/github.com/syke99/verox@v0.1.0" > /dev/null
+          curl -s "https://pkg.go.dev/github.com/syke99/verox@v0.1.0" > /dev/null
