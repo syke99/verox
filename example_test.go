@@ -40,9 +40,9 @@ func (e *notFoundError) Error() string { return "user not found: " + e.ID }
 func Example() {
 	getName := func(id string) (string, error) {
 		return verox.Try(fetchUser(id)).
-			Wrap(ErrUserLookupFailed).
+			WrapErr(ErrUserLookupFailed).
 			Try(validateUser).
-			Wrap(ErrUserInvalid).
+			WrapErr(ErrUserInvalid).
 			Map(func(u User) string { return u.Name }).
 			Unwrap()
 	}
@@ -61,9 +61,9 @@ func ExampleTry() {
 	// Ada Lovelace <nil>
 }
 
-func ExampleRes_Wrap() {
+func ExampleRes_WrapErr() {
 	res := verox.Try(fetchUser("")).
-		Wrap(ErrUserLookupFailed)
+		WrapErr(ErrUserLookupFailed)
 
 	_, err := res.Unwrap()
 	fmt.Println(errors.Is(err, ErrUserLookupFailed))
@@ -121,7 +121,7 @@ func ExampleRes_PeekErr() {
 
 func ExampleRes_Is() {
 	res := verox.Try(fetchUser("")).
-		Wrap(ErrUserLookupFailed)
+		WrapErr(ErrUserLookupFailed)
 
 	fmt.Println(res.Is(ErrUserLookupFailed))
 	// Output:

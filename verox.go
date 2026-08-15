@@ -14,7 +14,7 @@ type Res[T any] struct {
 	val T
 	err error
 	// wrapped marks an error as already attributed to the stage that
-	// produced it, so a later Wrap call doesn't stamp it with a sentinel
+	// produced it, so a later WrapErr call doesn't stamp it with a sentinel
 	// that belongs to a stage that never ran.
 	wrapped bool
 }
@@ -25,11 +25,11 @@ func Try[T any](val T, err error) Res[T] {
 	return Res[T]{val: val, err: err}
 }
 
-// Wrap attaches sentinel to the held error via %w, so errors.Is and
+// WrapErr attaches sentinel to the held error via %w, so errors.Is and
 // errors.As still see both sentinel and the original error. It is a no-op
 // on success, and a no-op if the error has already been wrapped by an
 // earlier stage in the chain (see Try/FlatMap/Map).
-func (r Res[T]) Wrap(sentinel error) Res[T] {
+func (r Res[T]) WrapErr(sentinel error) Res[T] {
 	if r.err != nil && !r.wrapped {
 		r.err = fmt.Errorf("%w: %w", sentinel, r.err)
 	}

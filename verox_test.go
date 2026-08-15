@@ -30,9 +30,9 @@ func TestTry(t *testing.T) {
 	})
 }
 
-func TestWrap(t *testing.T) {
+func TestWrapErr(t *testing.T) {
 	t.Run("wraps an unwrapped error", func(t *testing.T) {
-		r := Try(0, errBoom).Wrap(errSentinel)
+		r := Try(0, errBoom).WrapErr(errSentinel)
 		_, err := r.Unwrap()
 		if !errors.Is(err, errSentinel) || !errors.Is(err, errBoom) {
 			t.Fatalf("expected err to wrap both sentinel and original, got %v", err)
@@ -40,7 +40,7 @@ func TestWrap(t *testing.T) {
 	})
 
 	t.Run("is a no-op on success", func(t *testing.T) {
-		r := Try(9, error(nil)).Wrap(errSentinel)
+		r := Try(9, error(nil)).WrapErr(errSentinel)
 		val, err := r.Unwrap()
 		if err != nil || val != 9 {
 			t.Fatalf("got val=%v err=%v, want val=9 err=nil", val, err)
@@ -51,7 +51,7 @@ func TestWrap(t *testing.T) {
 		// Simulates the short-circuit path: an error that crossed a stage
 		// boundary (wrapped=true) must not pick up a second sentinel.
 		stale := Res[int]{err: errBoom, wrapped: true}
-		r := stale.Wrap(errSentinel)
+		r := stale.WrapErr(errSentinel)
 		_, err := r.Unwrap()
 		if errors.Is(err, errSentinel) {
 			t.Fatalf("expected sentinel NOT to be applied to an already-wrapped error, got %v", err)
@@ -214,7 +214,7 @@ func TestPeekErr(t *testing.T) {
 }
 
 func TestIs(t *testing.T) {
-	r := Try(0, errBoom).Wrap(errSentinel)
+	r := Try(0, errBoom).WrapErr(errSentinel)
 
 	t.Run("matches a wrapped sentinel", func(t *testing.T) {
 		if !r.Is(errSentinel) {
@@ -314,7 +314,7 @@ func TestChainAttribution(t *testing.T) {
 		bCalled, cCalled := false, false
 
 		val, resErr := Try(stageA(aFails)()).
-			Wrap(errA).
+			WrapErr(errA).
 			Try(func(n int) (string, error) {
 				bCalled = true
 				if bFails {
@@ -322,12 +322,12 @@ func TestChainAttribution(t *testing.T) {
 				}
 				return fmt.Sprintf("n=%d", n), nil
 			}).
-			Wrap(errB).
+			WrapErr(errB).
 			Try(func(s string) (string, error) {
 				cCalled = true
 				return s + "!", nil
 			}).
-			Wrap(errC).
+			WrapErr(errC).
 			Unwrap()
 
 		return struct{ b, c bool }{bCalled, cCalled}, val, resErr

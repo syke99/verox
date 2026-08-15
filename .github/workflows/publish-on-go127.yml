@@ -141,9 +141,9 @@ jobs:
 
             ```go
             return verox.Try(fetchUser(id)).
-                Wrap(ErrUserLookupFailed).
+                WrapErr(ErrUserLookupFailed).
                 Try(validateUser).
-                Wrap(ErrUserInvalid).
+                WrapErr(ErrUserInvalid).
                 Map(toProfile).
                 Unwrap()
             ```

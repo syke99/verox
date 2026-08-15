@@ -9,7 +9,7 @@ Verox, the chainable Result type for Go that keeps sentinel-wrapped errors corre
 
 What problem does Verox solve?
 =====
-Go's `(value, error)` return convention is good, but chaining several fallible steps together and wrapping each one's error with a sentinel for clean handling further up the call stack usually means either a lot of repeated `if err != nil` boilerplate, or bugs that are easy to miss: a later step's sentinel getting stamped onto an earlier step's error that a short-circuited chain never even reached, or a later step's side effects (a DB write, an API call) firing anyway because the short-circuit only happened after the call was already made. Verox's `Res[T]` handles both of these for you: `Try`, `Map`, and `FlatMap` never invoke a later step once an earlier one has failed, and `Wrap` won't attribute a sentinel to an error that isn't actually the current stage's own.
+Go's `(value, error)` return convention is good, but chaining several fallible steps together and wrapping each one's error with a sentinel for clean handling further up the call stack usually means either a lot of repeated `if err != nil` boilerplate, or bugs that are easy to miss: a later step's sentinel getting stamped onto an earlier step's error that a short-circuited chain never even reached, or a later step's side effects (a DB write, an API call) firing anyway because the short-circuit only happened after the call was already made. Verox's `Res[T]` handles both of these for you: `Try`, `Map`, and `FlatMap` never invoke a later step once an earlier one has failed, and `WrapErr` won't attribute a sentinel to an error that isn't actually the current stage's own.
 
 </br>
 
@@ -39,11 +39,11 @@ Start a chain with `Try`, passing in the `(value, error)` pair returned by any o
 res := verox.Try(fetchUser(id))
 ```
 
-Attach a sentinel error with `.Wrap()` so callers further up the stack can check for it with `errors.Is`, regardless of how the underlying error was phrased:
+Attach a sentinel error with `.WrapErr()` so callers further up the stack can check for it with `errors.Is`, regardless of how the underlying error was phrased:
 
 ```go
 res := verox.Try(fetchUser(id)).
-	Wrap(ErrUserLookupFailed)
+	WrapErr(ErrUserLookupFailed)
 ```
 
 Chain additional fallible steps with `.Try()`. Yes, the same name as the
@@ -69,9 +69,9 @@ func validateUser(u User) (User, error) {
 }
 
 res := verox.Try(fetchUser(id)).
-	Wrap(ErrUserLookupFailed).
+	WrapErr(ErrUserLookupFailed).
 	Try(validateUser).
-	Wrap(ErrUserInvalid)
+	WrapErr(ErrUserInvalid)
 ```
 
 If `fetchUser` already failed, `validateUser` is never called — `Try`
@@ -94,11 +94,11 @@ func validateUserStrict(u User, cfg Config, db *DB) (User, error) {
 }
 
 res := verox.Try(fetchUser(id)).
-	Wrap(ErrUserLookupFailed).
+	WrapErr(ErrUserLookupFailed).
 	Try(func(u User) (User, error) {
 		return validateUserStrict(u, cfg, db)
 	}).
-	Wrap(ErrUserInvalid)
+	WrapErr(ErrUserInvalid)
 ```
 
 Use `.Map()` for a step that can't fail. Its signature is
@@ -116,9 +116,9 @@ func toProfile(u User) Profile {
 }
 
 res := verox.Try(fetchUser(id)).
-	Wrap(ErrUserLookupFailed).
+	WrapErr(ErrUserLookupFailed).
 	Try(validateUser).
-	Wrap(ErrUserInvalid).
+	WrapErr(ErrUserInvalid).
 	Map(toProfile)
 ```
 
@@ -132,14 +132,14 @@ the value you actually want. `.FlatMap()` flattens that away:
 ```go
 // loadSubscription matches the shape FlatMap requires: func(T) Res[U]. It
 // already returns its own Res[Subscription], built from its own internal
-// Try/Wrap chain, instead of a plain (value, error) pair.
+// Try/WrapErr chain, instead of a plain (value, error) pair.
 func loadSubscription(u User) verox.Res[Subscription] {
 	return verox.Try(billingClient.GetSubscription(u.ID)).
-		Wrap(ErrSubscriptionLookupFailed)
+		WrapErr(ErrSubscriptionLookupFailed)
 }
 
 res := verox.Try(fetchUser(id)).
-	Wrap(ErrUserLookupFailed).
+	WrapErr(ErrUserLookupFailed).
 	FlatMap(loadSubscription)
 ```
 
@@ -160,9 +160,9 @@ Finally, call `.Unwrap()` to exit back to a plain Go `(value, error)` return:
 ```go
 func GetProfile(id string) (Profile, error) {
 	return verox.Try(fetchUser(id)).
-		Wrap(ErrUserLookupFailed).
+		WrapErr(ErrUserLookupFailed).
 		Try(validateUser).
-		Wrap(ErrUserInvalid).
+		WrapErr(ErrUserInvalid).
 		Map(toProfile).
 		Unwrap()
 }
