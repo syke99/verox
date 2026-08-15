@@ -1,0 +1,68 @@
+name: Coverage badge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  coverage-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up bootstrap Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Resolve Go 1.27 version (stable if released, else latest rc)
+        id: gover
+        run: |
+          version=$(curl -s 'https://go.dev/dl/?mode=json&include=all' | jq -r '
+            [.[] | select(.version | test("^go1\\.27\\.[0-9]+$")) | select(.stable == true)] as $stable |
+            if ($stable | length) > 0 then
+              ($stable | sort_by(.version | capture("go1\\.27\\.(?<p>[0-9]+)").p | tonumber) | last | .version)
+            else
+              ([.[] | select(.version | test("^go1\\.27rc[0-9]+$"))]
+               | sort_by(.version | capture("go1\\.27rc(?<p>[0-9]+)").p | tonumber) | last | .version)
+            end
+          ')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install the resolved Go 1.27 toolchain
+        env:
+          # Without this, `go install` sees this repo's go.mod (go 1.27)
+          # and tries to auto-fetch its own "go1.27.0" toolchain before
+          # even running the install — independent of, and conflicting
+          # with, the specific golang.org/dl version we're asking for here.
+          GOTOOLCHAIN: local
+        run: |
+          go install "golang.org/dl/${{ steps.gover.outputs.version }}@latest"
+          "$(go env GOPATH)/bin/${{ steps.gover.outputs.version }}" download
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          echo "GOBIN27=${{ steps.gover.outputs.version }}" >> "$GITHUB_ENV"
+
+      - name: Run tests with coverage
+        run: |
+          "$GOBIN27" test ./... -covermode=count -coverprofile=coverage.out
+          "$GOBIN27" tool cover -func=coverage.out -o=coverage.out
+
+      - name: Update coverage badge
+        uses: tj-actions/coverage-badge-go@v3
+        with:
+          filename: coverage.out
+
+      - name: Commit and push badge update
+        run: |
+          git config --local user.email "actions@users.noreply.github.com"
+          git config --local user.name "verox-publish-bot"
+          if ! git diff --quiet README.md; then
+            git add README.md
+            git commit -m "chore: update coverage badge"
+            git push
+          fi
