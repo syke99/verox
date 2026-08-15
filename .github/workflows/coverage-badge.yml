@@ -11,6 +11,16 @@ permissions:
 jobs:
   coverage-badge:
     runs-on: ubuntu-latest
+    env:
+      # This repo's go.mod declares `go 1.27`. With Go's default toolchain
+      # auto-switching, ANY `go` invocation from inside this checkout --
+      # including ones internal to actions/setup-go itself, before it's
+      # even finished setting up its own requested version -- tries to
+      # auto-fetch a "go1.27.0" toolchain on its own, independent of and
+      # conflicting with the specific golang.org/dl version this workflow
+      # manages explicitly below. Setting this job-wide, from the first
+      # step, is the only place that reliably prevents it.
+      GOTOOLCHAIN: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,12 +45,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Install the resolved Go 1.27 toolchain
-        env:
-          # Without this, `go install` sees this repo's go.mod (go 1.27)
-          # and tries to auto-fetch its own "go1.27.0" toolchain before
-          # even running the install — independent of, and conflicting
-          # with, the specific golang.org/dl version we're asking for here.
-          GOTOOLCHAIN: local
         run: |
           go install "golang.org/dl/${{ steps.gover.outputs.version }}@latest"
           "$(go env GOPATH)/bin/${{ steps.gover.outputs.version }}" download
