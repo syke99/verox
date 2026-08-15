@@ -46,6 +46,20 @@ res := verox.Try(fetchUser(id)).
 	WrapErr(ErrUserLookupFailed)
 ```
 
+Use `.Or()` to fall back to an alternate computation if the chain has
+already failed — trying a backup data source, for instance. Its signature
+is `Or(f func() Res[T]) Res[T]`. It's the mirror image of the other
+combinators: `Try`/`Map`/`FlatMap` skip `f` when there's *already* an
+error, while `Or` only calls `f` when there *is* one, and is a no-op on
+success:
+
+```go
+res := verox.Try(fetchUser(id)).
+	Or(func() verox.Res[User] {
+		return verox.Try(fetchUserFromBackup(id))
+	})
+```
+
 Chain additional fallible steps with `.Try()`. Yes, the same name as the
 package-level `Try` used to start the chain above — Go keeps these apart
 without any ambiguity, since one is reached through the package
@@ -166,6 +180,28 @@ func GetProfile(id string) (Profile, error) {
 		Map(toProfile).
 		Unwrap()
 }
+```
+
+`.Unwrap()` isn't the only way to exit a chain. `.UnwrapOr(default)`
+returns the held value, or a fallback `default` if the chain failed —
+useful when `Unwrap`'s zero-value-on-error isn't what you actually want:
+
+```go
+name := verox.Try(fetchUser(id)).
+	Map(func(u User) string { return u.Name }).
+	UnwrapOr("unknown")
+```
+
+`.Fold()` goes further, resolving both branches into a single value in one
+call instead of checking an error after the fact. Its signature is
+`Fold[U any](onSuccess func(T) U, onFailure func(error) U) U`:
+
+```go
+status := verox.Try(fetchUser(id)).
+	Fold(
+		func(u User) string { return "found: " + u.Name },
+		func(err error) string { return "not found: " + err.Error() },
+	)
 ```
 
 <!-- PRERELEASE-NOTE:START -->

@@ -62,6 +62,63 @@ func TestWrapErr(t *testing.T) {
 	})
 }
 
+func TestOr(t *testing.T) {
+	t.Run("does not call f on success", func(t *testing.T) {
+		called := false
+		r := Try(9, error(nil)).Or(func() Res[int] {
+			called = true
+			return Try(0, errBoom)
+		})
+		if called {
+			t.Fatal("f should not have been called after a prior success")
+		}
+		val, err := r.Unwrap()
+		if val != 9 || err != nil {
+			t.Fatalf("got val=%v err=%v, want val=9 err=nil", val, err)
+		}
+	})
+
+	t.Run("falls back to f on failure", func(t *testing.T) {
+		called := false
+		r := Try(0, errBoom).Or(func() Res[int] {
+			called = true
+			return Try(9, error(nil))
+		})
+		if !called {
+			t.Fatal("expected f to be called after a prior failure")
+		}
+		val, err := r.Unwrap()
+		if val != 9 || err != nil {
+			t.Fatalf("got val=%v err=%v, want val=9 err=nil", val, err)
+		}
+	})
+
+	t.Run("propagates f's own failure", func(t *testing.T) {
+		r := Try(0, errBoom).Or(func() Res[int] {
+			return Try(0, errOther)
+		})
+		_, err := r.Unwrap()
+		if !errors.Is(err, errOther) {
+			t.Fatalf("got err=%v, want %v", err, errOther)
+		}
+	})
+
+	t.Run("composes correctly with WrapErr after the fallback", func(t *testing.T) {
+		// f's failure is fresh, not stale from the original r, so a
+		// subsequent WrapErr must still apply to it.
+		r := Try(0, errBoom).
+			Or(func() Res[int] { return Try(0, errOther) }).
+			WrapErr(errSentinel)
+		_, err := r.Unwrap()
+		if !errors.Is(err, errSentinel) || !errors.Is(err, errOther) {
+			t.Fatalf("expected sentinel to wrap f's failure, got %v", err)
+		}
+		if errors.Is(err, errBoom) {
+			t.Fatalf("expected the original (replaced) error NOT to appear, got %v", err)
+		}
+	})
+}
+
 func TestMap(t *testing.T) {
 	t.Run("transforms a successful value", func(t *testing.T) {
 		r := Try(3, error(nil)).Map(func(n int) string { return fmt.Sprintf("n=%d", n) })
@@ -287,6 +344,52 @@ func TestUnwrap(t *testing.T) {
 		val, err := Try("", errBoom).Unwrap()
 		if val != "" || !errors.Is(err, errBoom) {
 			t.Fatalf("got val=%q err=%v, want val=\"\" err=%v", val, err, errBoom)
+		}
+	})
+}
+
+func TestUnwrapOr(t *testing.T) {
+	t.Run("returns the value on success", func(t *testing.T) {
+		got := Try(9, error(nil)).UnwrapOr(0)
+		if got != 9 {
+			t.Fatalf("got %v, want 9", got)
+		}
+	})
+
+	t.Run("returns the default on failure", func(t *testing.T) {
+		got := Try(0, errBoom).UnwrapOr(9)
+		if got != 9 {
+			t.Fatalf("got %v, want 9", got)
+		}
+	})
+}
+
+func TestFold(t *testing.T) {
+	t.Run("calls onSuccess, not onFailure", func(t *testing.T) {
+		failureCalled := false
+		got := Try(9, error(nil)).Fold(
+			func(n int) string { return fmt.Sprintf("ok:%d", n) },
+			func(err error) string { failureCalled = true; return "fail" },
+		)
+		if failureCalled {
+			t.Fatal("onFailure should not have been called on success")
+		}
+		if got != "ok:9" {
+			t.Fatalf("got %q, want %q", got, "ok:9")
+		}
+	})
+
+	t.Run("calls onFailure, not onSuccess", func(t *testing.T) {
+		successCalled := false
+		got := Try(0, errBoom).Fold(
+			func(n int) string { successCalled = true; return "ok" },
+			func(err error) string { return "fail:" + err.Error() },
+		)
+		if successCalled {
+			t.Fatal("onSuccess should not have been called on failure")
+		}
+		if got != "fail:boom" {
+			t.Fatalf("got %q, want %q", got, "fail:boom")
 		}
 	})
 }

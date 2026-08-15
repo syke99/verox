@@ -71,6 +71,20 @@ func ExampleRes_WrapErr() {
 	// true
 }
 
+func ExampleRes_Or() {
+	guestUser := func() verox.Res[User] {
+		return verox.Try(User{Name: "Guest"}, error(nil))
+	}
+
+	res := verox.Try(fetchUser("")).
+		Or(guestUser)
+
+	val, err := res.Unwrap()
+	fmt.Println(val.Name, err)
+	// Output:
+	// Guest <nil>
+}
+
 func ExampleRes_Map() {
 	res := verox.Try(fetchUser("42")).
 		Map(func(u User) string { return u.Name })
@@ -145,4 +159,26 @@ func ExampleRes_Unwrap() {
 	fmt.Println(val, err)
 	// Output:
 	// Ada Lovelace <nil>
+}
+
+func ExampleRes_UnwrapOr() {
+	res := verox.Try(fetchUser(""))
+
+	name := res.Map(func(u User) string { return u.Name }).
+		UnwrapOr("Guest")
+	fmt.Println(name)
+	// Output:
+	// Guest
+}
+
+func ExampleRes_Fold() {
+	res := verox.Try(fetchUser(""))
+
+	status := res.Fold(
+		func(u User) string { return "found: " + u.Name },
+		func(err error) string { return "not found: " + err.Error() },
+	)
+	fmt.Println(status)
+	// Output:
+	// not found: empty id
 }

@@ -36,6 +36,16 @@ func (r Res[T]) WrapErr(sentinel error) Res[T] {
 	return r
 }
 
+// Or falls back to an alternate computation if r already holds an error,
+// such as trying a different data source. If r holds a successful value,
+// f is never called and r is returned unchanged.
+func (r Res[T]) Or(f func() Res[T]) Res[T] {
+	if r.err == nil {
+		return r
+	}
+	return f()
+}
+
 // Map applies an infallible transform to a successful value. If r already
 // holds an error, f is never called and the error propagates unchanged.
 func (r Res[T]) Map[U any](f func(T) U) Res[U] {
@@ -100,4 +110,21 @@ func (r Res[T]) As[E error]() (target E, ok bool) {
 // Unwrap returns the held value and error.
 func (r Res[T]) Unwrap() (T, error) {
 	return r.val, r.err
+}
+
+// UnwrapOr returns the held value, or def if r holds an error.
+func (r Res[T]) UnwrapOr(def T) T {
+	if r.err != nil {
+		return def
+	}
+	return r.val
+}
+
+// Fold resolves r into a single value by calling exactly one of onSuccess
+// or onFailure, depending on whether r holds a value or an error.
+func (r Res[T]) Fold[U any](onSuccess func(T) U, onFailure func(error) U) U {
+	if r.err != nil {
+		return onFailure(r.err)
+	}
+	return onSuccess(r.val)
 }
