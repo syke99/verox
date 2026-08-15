@@ -1,6 +1,5 @@
 # Verox
 [![Go Reference](https://pkg.go.dev/badge/github.com/syke99/verox.svg)](https://pkg.go.dev/github.com/syke99/verox)
-[![Go Reportcard](https://goreportcard.com/badge/github.com/syke99/verox)](https://goreportcard.com/report/github.com/syke99/verox)
 
 [//]: # ([![Codecov]&#40;https://codecov.io/gh/syke99/verox/branch/main/graph/badge.svg&#41;]&#40;https://codecov.io/gh/syke99/verox&#41;)
 [![LICENSE](https://img.shields.io/github/license/syke99/verox)](https://github.com/syke99/verox/blob/main/LICENSE)
@@ -46,14 +45,36 @@ res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed)
 ```
 
-Chain additional fallible steps with `.TryMap()`. If `fetchUser` already failed, `validateUser` is never called:
+Chain additional fallible steps with `.TryMap()`. Its signature is
+`TryMap[U any](f func(val T) (U, error)) Res[U]` — `f` takes the value
+currently held by the chain (`T`) and returns the same `(value, error)`
+shape any ordinary Go function already returns, just with a possibly
+different result type (`U`). Because of that, `f` doesn't need to be a
+closure — any existing function whose signature matches `func(T) (U, error)`
+can be passed by name directly, the same way `fetchUser` was passed straight
+into `Try` above:
 
 ```go
+// validateUser matches the shape TryMap requires: func(T) (U, error).
+// Here T and U both happen to be User, but they don't have to be — TryMap
+// can change the type along with validating it, the same way fetchUser
+// could just as easily have returned a different type than what comes out
+// the other end of validateUser.
+func validateUser(u User) (User, error) {
+	if u.Email == "" {
+		return User{}, errors.New("user has no email")
+	}
+	return u, nil
+}
+
 res := verox.Try(fetchUser(id)).
 	Wrap(ErrUserLookupFailed).
 	TryMap(validateUser).
 	Wrap(ErrUserInvalid)
 ```
+
+If `fetchUser` already failed, `validateUser` is never called — `TryMap`
+short-circuits, so no step past a failure ever runs.
 
 Use `.Map()` for a step that can't fail, and `.FlatMap()` for a step that already returns its own `Res[U]`:
 
