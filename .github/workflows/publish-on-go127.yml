@@ -11,6 +11,8 @@ permissions:
 jobs:
   check-and-publish:
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.published.outputs.published }}
     steps:
       - name: Check current visibility
         id: visibility
@@ -24,9 +26,16 @@ jobs:
         if: steps.visibility.outputs.already_public == 'false'
         id: gocheck
         run: |
-          found=$(curl -s 'https://go.dev/dl/?mode=json&include=all' \
-            | jq -r '[.[] | select(.version | test("^go1\\.27\\.[0-9]+$")) | select(.stable == true)] | length > 0')
-          echo "found=$found" >> "$GITHUB_OUTPUT"
+          version=$(curl -s 'https://go.dev/dl/?mode=json&include=all' \
+            | jq -r '[.[] | select(.stable == true) | select(.version | test("^go1\\.27\\.[0-9]+$"))]
+                     | sort_by(.version | capture("go1\\.27\\.(?<p>[0-9]+)").p | tonumber)
+                     | last | .version // empty')
+          if [ -n "$version" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "version=${version#go}" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Checkout
         if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
@@ -34,6 +43,19 @@ jobs:
         with:
           token: ${{ secrets.PUBLISH_TOKEN }}
           fetch-depth: 0
+
+      - name: Set up the released Go 1.27 toolchain
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.gocheck.outputs.version }}
+
+      - name: Verify build, vet, and tests against the real release
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -v -cover
 
       - name: Remove pre-release note from README
         if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
@@ -67,3 +89,73 @@ jobs:
           curl -s "https://proxy.golang.org/github.com/syke99/verox/@v/v0.1.0.info"
           curl -s "https://sum.golang.org/lookup/github.com/syke99/verox@v0.1.0" > /dev/null
           curl -s "https://pkg.go.dev/github.com/syke99/verox@v0.1.0" > /dev/null
+
+      - name: Mark as published
+        id: published
+        if: steps.visibility.outputs.already_public == 'false' && steps.gocheck.outputs.found == 'true'
+        run: echo "published=true" >> "$GITHUB_OUTPUT"
+
+  wait-and-draft-announcement:
+    needs: check-and-publish
+    if: needs.check-and-publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      issues: write
+    steps:
+      - name: Poll pkg.go.dev until the module is actually resolvable
+        run: |
+          for i in $(seq 1 40); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://proxy.golang.org/github.com/syke99/verox/@v/v0.1.0.info")
+            if [ "$status" = "200" ]; then
+              echo "Module resolves via proxy.golang.org; pkg.go.dev should reflect it shortly."
+              exit 0
+            fi
+            echo "Not yet resolvable (status $status), waiting 30s (attempt $i/40)..."
+            sleep 30
+          done
+          echo "::warning::pkg.go.dev did not confirm availability within 20 minutes. Drafting the announcement issue anyway, but double check the link before posting."
+
+      - name: Draft r/golang Small Projects thread post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY: |
+            verox is live on pkg.go.dev: https://pkg.go.dev/github.com/syke99/verox
+
+            Draft below for the weekly "What are you working on?" / Small Projects
+            thread on r/golang. Review and edit before posting — this is a starting
+            point, not final copy.
+
+            ---
+
+            **verox** — a chainable Result type for Go, built on Go 1.27's new generic
+            methods.
+
+            Wraps the standard `(value, error)` return shape into a `Res[T]` you can
+            chain through `Map`/`Try`/`FlatMap`, with sentinel-error wrapping that
+            stays correctly attributed to the stage that actually produced the
+            failure — no double-wrapping or misattribution across short-circuited
+            chains, which was the recurring problem with the ad hoc result-wrapper
+            attempts I kept reaching for before this.
+
+            ```go
+            return verox.Try(fetchUser(id)).
+                Wrap(ErrUserLookupFailed).
+                Try(validateUser).
+                Wrap(ErrUserInvalid).
+                Map(toProfile).
+                Unwrap()
+            ```
+
+            Repo: https://github.com/syke99/verox
+            Docs: https://pkg.go.dev/github.com/syke99/verox
+
+            This is a v0.1.0 — feedback on the API shape very welcome, especially on
+            what belongs in the core vs. what should stay out.
+
+            ---
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "verox v0.1.0 is live — draft for r/golang Small Projects thread" \
+            --body "$BODY"
