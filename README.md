@@ -1,4 +1,5 @@
 # Verox
+![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen)
 [![Go Reference](https://pkg.go.dev/badge/github.com/syke99/verox.svg)](https://pkg.go.dev/github.com/syke99/verox)
 
 [//]: # ([![Codecov]&#40;https://codecov.io/gh/syke99/verox/branch/main/graph/badge.svg&#41;]&#40;https://codecov.io/gh/syke99/verox&#41;)
