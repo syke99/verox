@@ -1,56 +1,106 @@
-# verox
+# Verox
+[![Go Reference](https://pkg.go.dev/badge/github.com/syke99/verox.svg)](https://pkg.go.dev/github.com/syke99/verox)
+[![Go Reportcard](https://goreportcard.com/badge/github.com/syke99/verox)](https://goreportcard.com/report/github.com/syke99/verox)
 
-A chainable `Result`-style type for Go, built on Go 1.27's generic methods.
+[//]: # ([![Codecov]&#40;https://codecov.io/gh/syke99/verox/branch/main/graph/badge.svg&#41;]&#40;https://codecov.io/gh/syke99/verox&#41;)
+[![LICENSE](https://img.shields.io/github/license/syke99/verox)](https://github.com/syke99/verox/blob/main/LICENSE)
 
-`verox` wraps the standard `(value, error)` return shape into a `Res[T]` that
-you can chain through transforms and fallible steps, with sentinel errors
-that stay correctly attributed to the stage that actually produced them —
-even across short-circuited chains.
+Verox, the chainable Result type for Go that keeps sentinel-wrapped errors correctly attributed to the stage that actually produced them
+
+What problem does Verox solve?
+=====
+Go's `(value, error)` return convention is good, but chaining several fallible steps together and wrapping each one's error with a sentinel for clean handling further up the call stack usually means either a lot of repeated `if err != nil` boilerplate, or bugs that are easy to miss: a later step's sentinel getting stamped onto an earlier step's error that a short-circuited chain never even reached, or a later step's side effects (a DB write, an API call) firing anyway because the short-circuit only happened after the call was already made. Verox's `Res[T]` handles both of these for you: `TryMap`, `Map`, and `FlatMap` never invoke a later step once an earlier one has failed, and `Wrap` won't attribute a sentinel to an error that isn't actually the current stage's own.
+
+</br>
+
+Verox is built on Go 1.27's generic methods, so combinators like `Map`, `TryMap`, and `FlatMap` live directly on `Res[T]` instead of as free functions.
+
+How do I use Verox?
+====
+
+### Installing
+To install Verox in a repo, simply run
+
+```bash
+$ go get github.com/syke99/verox
+```
+
+Then you can import the package in any go file you'd like
 
 ```go
 import "github.com/syke99/verox"
+```
 
-func myCallerThatUsesVerox() (Summary, error) {
-	return verox.Try(myFirstCaller()).
-		Wrap(ErrMyFirstSentinel).
-		TryMap(mySecondCaller).
-		Wrap(ErrMySecondSentinel).
-		Map(toSummary).
+### Basic usage
+
+Start a chain with `Try`, passing in the `(value, error)` pair returned by any ordinary Go function:
+
+```go
+res := verox.Try(fetchUser(id))
+```
+
+Attach a sentinel error with `.Wrap()` so callers further up the stack can check for it with `errors.Is`, regardless of how the underlying error was phrased:
+
+```go
+res := verox.Try(fetchUser(id)).
+	Wrap(ErrUserLookupFailed)
+```
+
+Chain additional fallible steps with `.TryMap()`. If `fetchUser` already failed, `validateUser` is never called:
+
+```go
+res := verox.Try(fetchUser(id)).
+	Wrap(ErrUserLookupFailed).
+	TryMap(validateUser).
+	Wrap(ErrUserInvalid)
+```
+
+Use `.Map()` for a step that can't fail, and `.FlatMap()` for a step that already returns its own `Res[U]`:
+
+```go
+res := verox.Try(fetchUser(id)).
+	Wrap(ErrUserLookupFailed).
+	TryMap(validateUser).
+	Wrap(ErrUserInvalid).
+	Map(toProfile)
+```
+
+Tap into the chain with `.Peek()`/`.PeekErr()` for logging or metrics without disturbing it, and check for specific errors mid-chain with `.Is()`/`.As()`:
+
+```go
+res = res.
+	Peek(func(p Profile) { log.Printf("resolved profile: %+v", p) }).
+	PeekErr(func(err error) { log.Printf("chain failed: %v", err) })
+
+if res.Is(ErrUserInvalid) {
+	// handle invalid users specially
+}
+```
+
+Finally, call `.Unwrap()` to exit back to a plain Go `(value, error)` return:
+
+```go
+func GetProfile(id string) (Profile, error) {
+	return verox.Try(fetchUser(id)).
+		Wrap(ErrUserLookupFailed).
+		TryMap(validateUser).
+		Wrap(ErrUserInvalid).
+		Map(toProfile).
 		Unwrap()
 }
 ```
 
-## Why
+**!!NOTE!!**
 
-Go's idiomatic `(val, err)` return convention is good, but wrapping errors
-with sentinel context for clean handling further up the call stack usually
-means either boilerplate at every call site, or double-wrapping/misattributing
-errors when a later stage never even ran. `verox` handles that bookkeeping
-so a failure in stage one is never mistakenly stamped with stage two's
-sentinel.
+Verox requires Go 1.27+ for generic methods. At the time of writing, 1.27 is
+still at release candidate (`go1.27rc1`+); until it's stable, building
+against this module means pointing `GOTOOLCHAIN` at a matching rc build.
 
-## Requirements
+Who?
+====
 
-Go 1.27+ (generic methods). At the time of writing, 1.27 is at release
-candidate (`go1.27rc1`+); this module will build against the stable release
-once it ships.
-
-## API
-
-- `Try[T](val T, err error) Res[T]` — lift a `(val, err)` pair into a `Res[T]`.
-- `(Res[T]) Wrap(sentinel error) Res[T]` — attach a sentinel to the held
-  error, unless it was already wrapped by an earlier stage.
-- `(Res[T]) Map[U](f func(T) U) Res[U]` — infallible transform.
-- `(Res[T]) TryMap[U](f func(T) (U, error)) Res[U]` — fallible step using the
-  held value; short-circuits if `r` already failed.
-- `(Res[T]) FlatMap[U](f func(T) Res[U]) Res[U]` — chain a step that already
-  returns a `Res[U]`, flattening instead of nesting.
-- `(Res[T]) Peek(f func(T)) Res[T]` / `PeekErr(f func(error)) Res[T]` —
-  observe the value or error without altering the chain.
-- `(Res[T]) Is(target error) bool` — `errors.Is` over the held error.
-- `(Res[T]) As[E error]() (E, bool)` — `errors.As` over the held error.
-- `(Res[T]) Unwrap() (T, error)` — exit the chain back to a plain Go return.
+This library was developed by Quinn Millican ([@syke99](https://github.com/syke99))
 
 ## License
 
-MIT
+This repo is under the MIT license, see [LICENSE](LICENSE) for details.

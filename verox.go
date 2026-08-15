@@ -11,8 +11,11 @@ import (
 // Res holds either a successful value of type T or an error produced along
 // the way.
 type Res[T any] struct {
-	val     T
-	err     error
+	val T
+	err error
+	// wrapped marks an error as already attributed to the stage that
+	// produced it, so a later Wrap call doesn't stamp it with a sentinel
+	// that belongs to a stage that never ran.
 	wrapped bool
 }
 
@@ -22,8 +25,10 @@ func Try[T any](val T, err error) Res[T] {
 	return Res[T]{val: val, err: err}
 }
 
-// Wrap attaches sentinel to the held error, unless it has already been
-// wrapped by an earlier stage in the chain (see TryMap/FlatMap/Map).
+// Wrap attaches sentinel to the held error via %w, so errors.Is and
+// errors.As still see both sentinel and the original error. It is a no-op
+// on success, and a no-op if the error has already been wrapped by an
+// earlier stage in the chain (see TryMap/FlatMap/Map).
 func (r Res[T]) Wrap(sentinel error) Res[T] {
 	if r.err != nil && !r.wrapped {
 		r.err = fmt.Errorf("%w: %w", sentinel, r.err)
@@ -31,7 +36,8 @@ func (r Res[T]) Wrap(sentinel error) Res[T] {
 	return r
 }
 
-// Map applies an infallible transform to a successful value.
+// Map applies an infallible transform to a successful value. If r already
+// holds an error, f is never called and the error propagates unchanged.
 func (r Res[T]) Map[U any](f func(T) U) Res[U] {
 	if r.err != nil {
 		return Res[U]{err: r.err, wrapped: true}
@@ -39,8 +45,9 @@ func (r Res[T]) Map[U any](f func(T) U) Res[U] {
 	return Res[U]{val: f(r.val)}
 }
 
-// TryMap applies a fallible step using the held value, short-circuiting if
-// r already carries a failure.
+// TryMap applies a fallible step using the held value. If r already holds
+// an error, f is never called and the error propagates unchanged; this is
+// what lets a chain stop running further steps as soon as one fails.
 func (r Res[T]) TryMap[U any](f func(val T) (U, error)) Res[U] {
 	if r.err != nil {
 		return Res[U]{err: r.err, wrapped: true}
@@ -50,7 +57,8 @@ func (r Res[T]) TryMap[U any](f func(val T) (U, error)) Res[U] {
 }
 
 // FlatMap chains a step that already returns a Res[U], flattening the
-// result instead of nesting it.
+// result instead of nesting it. If r already holds an error, f is never
+// called and the error propagates unchanged.
 func (r Res[T]) FlatMap[U any](f func(T) Res[U]) Res[U] {
 	if r.err != nil {
 		return Res[U]{err: r.err, wrapped: true}
