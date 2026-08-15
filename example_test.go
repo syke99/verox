@@ -72,8 +72,8 @@ func ExampleRes_WrapErr() {
 }
 
 func ExampleRes_Or() {
-	guestUser := func() verox.Res[User] {
-		return verox.Try(User{Name: "Guest"}, error(nil))
+	guestUser := func() (User, error) {
+		return User{Name: "Guest"}, nil
 	}
 
 	res := verox.Try(fetchUser("")).

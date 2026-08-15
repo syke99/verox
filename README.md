@@ -48,16 +48,20 @@ res := verox.Try(fetchUser(id)).
 
 Use `.Or()` to fall back to an alternate computation if the chain has
 already failed — trying a backup data source, for instance. Its signature
-is `Or(f func() Res[T]) Res[T]`. It's the mirror image of the other
-combinators: `Try`/`Map`/`FlatMap` skip `f` when there's *already* an
-error, while `Or` only calls `f` when there *is* one, and is a no-op on
-success:
+is `Or(f func() (T, error)) Res[T]` — the same `(value, error)` shape as
+any ordinary Go function, so a zero-arg function can be passed by name
+directly, the same way `validateUser` was earlier. It's the mirror image
+of the other combinators: `Try`/`Map`/`FlatMap` skip `f` when there's
+*already* an error, while `Or` only calls `f` when there *is* one, and is
+a no-op on success:
 
 ```go
+func fetchUserFromBackup() (User, error) {
+	// ...
+}
+
 res := verox.Try(fetchUser(id)).
-	Or(func() verox.Res[User] {
-		return verox.Try(fetchUserFromBackup(id))
-	})
+	Or(fetchUserFromBackup)
 ```
 
 Chain additional fallible steps with `.Try()`. Yes, the same name as the

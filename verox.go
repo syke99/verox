@@ -39,11 +39,12 @@ func (r Res[T]) WrapErr(sentinel error) Res[T] {
 // Or falls back to an alternate computation if r already holds an error,
 // such as trying a different data source. If r holds a successful value,
 // f is never called and r is returned unchanged.
-func (r Res[T]) Or(f func() Res[T]) Res[T] {
+func (r Res[T]) Or(f func() (T, error)) Res[T] {
 	if r.err == nil {
 		return r
 	}
-	return f()
+	val, err := f()
+	return Res[T]{val: val, err: err}
 }
 
 // Map applies an infallible transform to a successful value. If r already

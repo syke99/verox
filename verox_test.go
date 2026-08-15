@@ -65,9 +65,9 @@ func TestWrapErr(t *testing.T) {
 func TestOr(t *testing.T) {
 	t.Run("does not call f on success", func(t *testing.T) {
 		called := false
-		r := Try(9, error(nil)).Or(func() Res[int] {
+		r := Try(9, error(nil)).Or(func() (int, error) {
 			called = true
-			return Try(0, errBoom)
+			return 0, errBoom
 		})
 		if called {
 			t.Fatal("f should not have been called after a prior success")
@@ -80,9 +80,9 @@ func TestOr(t *testing.T) {
 
 	t.Run("falls back to f on failure", func(t *testing.T) {
 		called := false
-		r := Try(0, errBoom).Or(func() Res[int] {
+		r := Try(0, errBoom).Or(func() (int, error) {
 			called = true
-			return Try(9, error(nil))
+			return 9, nil
 		})
 		if !called {
 			t.Fatal("expected f to be called after a prior failure")
@@ -94,8 +94,8 @@ func TestOr(t *testing.T) {
 	})
 
 	t.Run("propagates f's own failure", func(t *testing.T) {
-		r := Try(0, errBoom).Or(func() Res[int] {
-			return Try(0, errOther)
+		r := Try(0, errBoom).Or(func() (int, error) {
+			return 0, errOther
 		})
 		_, err := r.Unwrap()
 		if !errors.Is(err, errOther) {
@@ -107,7 +107,7 @@ func TestOr(t *testing.T) {
 		// f's failure is fresh, not stale from the original r, so a
 		// subsequent WrapErr must still apply to it.
 		r := Try(0, errBoom).
-			Or(func() Res[int] { return Try(0, errOther) }).
+			Or(func() (int, error) { return 0, errOther }).
 			WrapErr(errSentinel)
 		_, err := r.Unwrap()
 		if !errors.Is(err, errSentinel) || !errors.Is(err, errOther) {
